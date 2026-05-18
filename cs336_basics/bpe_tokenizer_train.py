@@ -8,9 +8,8 @@ from typing import BinaryIO
 from line_profiler import profile
 import heapq
 from dataclasses import dataclass
-from cs336_basics.bpe_workers import count_pre_tokens_for_chunk
+from cs336_basics.bpe_utils import count_pre_tokens_for_chunk, PAT
 
-PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -157,7 +156,7 @@ def bpe_tokenizer_train(input_path: str, vocab_size: int, special_tokens: list[s
             # if b"".join(infected_pt) == b" the":
             #     print(cnt, pre_token_cnt_map[infected_pt], pair_most, cur_tokens)
             #     input("???")
-
+            # this while loop could be optimized by storing only useful indexes, but I'm lazy and this is Python
             while i < mx - 1:
                 pair = (cur_tokens[i], cur_tokens[i+1])
                 if pair == pair_most:
@@ -217,9 +216,11 @@ if __name__ == "__main__":
     test_file_path = Path.joinpath(current_file_path, "../data/TinyStoriesV2-GPT4-train.txt").absolute()
     vocab, merges = bpe_tokenizer_train(str(test_file_path), 10_000, ["<|endoftext|>"])
     results_dump_path = Path.joinpath(current_file_path, "../out").absolute()
-    # # debug for answer
+    from bpe_utils import save_bpe
+    save_bpe(vocab, merges, results_dump_path / "bpe_dump")
+    # debug for answer
     import pprint
-    with open(results_dump_path / "vocab", "w") as f:
-        f.write(pprint.pformat(vocab))
-    with open(results_dump_path / "merges", "w") as f:
-        f.write(pprint.pformat(merges))
+    with open(results_dump_path / "vocab.py", "w") as f:
+        f.write("vocab=" + pprint.pformat(vocab))
+    with open(results_dump_path / "merges.py", "w") as f:
+        f.write("merges=" + pprint.pformat(merges))
