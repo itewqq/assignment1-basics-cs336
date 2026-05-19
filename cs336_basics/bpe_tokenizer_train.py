@@ -217,10 +217,17 @@ if __name__ == "__main__":
     vocab, merges = bpe_tokenizer_train(str(test_file_path), 10_000, ["<|endoftext|>"])
     results_dump_path = Path.joinpath(current_file_path, "../out").absolute()
     from bpe_utils import save_bpe
-    save_bpe(vocab, merges, results_dump_path / "bpe_dump")
-    # debug for answer
-    import pprint
-    with open(results_dump_path / "vocab.py", "w") as f:
-        f.write("vocab=" + pprint.pformat(vocab))
-    with open(results_dump_path / "merges.py", "w") as f:
-        f.write("merges=" + pprint.pformat(merges))
+    save_bpe(vocab, merges, results_dump_path / "bpe_dump_tinystory")
+
+    test_file_path = Path.joinpath(current_file_path, "../data/owt_train.txt").absolute()
+    vocab, merges = bpe_tokenizer_train(str(test_file_path), 32_000, ["<|endoftext|>"])
+    results_dump_path = Path.joinpath(current_file_path, "../out").absolute()
+    from bpe_utils import save_bpe
+    save_bpe(vocab, merges, results_dump_path / "bpe_dump_owt")
+
+    # # debug for answer
+    # import pprint
+    # with open(results_dump_path / "vocab.py", "w") as f:
+    #     f.write("vocab=" + pprint.pformat(vocab))
+    # with open(results_dump_path / "merges.py", "w") as f:
+    #     f.write("merges=" + pprint.pformat(merges))

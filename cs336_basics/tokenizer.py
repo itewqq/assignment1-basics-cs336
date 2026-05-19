@@ -16,6 +16,7 @@ class Tokenizer:
         else:
             self.special_pat = None
         self.vocab_rev = {v:k for k,v in vocab.items()} # token bytes -> token id
+        self.pt_to_tokens = {}
 
     def from_files(cls, bpe_path: str, special_tokens: list[str] | None = None):
         raise NotImplementedError
@@ -29,7 +30,6 @@ class Tokenizer:
             pt_cnt = Counter()
             pt_list_input_order = []
             pair_to_pt = {}
-            pt_to_tokens = {}
             # for each segment divided by the special tokens
             for m in re.finditer(PAT, piece):
                 key = tuple(bytes([b]) for b in m.group(0).encode("utf-8"))
@@ -37,11 +37,12 @@ class Tokenizer:
                 pt_list_input_order.append(key)
 
             for pt in pt_cnt:
-                pt_to_tokens[pt] = list(pt) # raw pre token key is all single bytes
-                for raw_pair in pairwise(pt):
-                    if raw_pair not in pair_to_pt:
-                        pair_to_pt[raw_pair] = set()
-                    pair_to_pt[raw_pair].add(pt) 
+                if pt not in self.pt_to_tokens: # performance bug fix #1: cache the pre-token results. 3 times faster after this fix, 1910.749s -> 669.534s on TinyStoriesV2-GPT4-train.txt.
+                    self.pt_to_tokens[pt] = list(pt) # raw pre token key is all single bytes
+                    for raw_pair in pairwise(pt):
+                        if raw_pair not in pair_to_pt:
+                            pair_to_pt[raw_pair] = set()
+                        pair_to_pt[raw_pair].add(pt) 
 
             # merge in the same order of training
             for pair_merge in self.merges:
@@ -49,7 +50,7 @@ class Tokenizer:
                     continue
 
                 for pt in pair_to_pt[pair_merge]:
-                    tokens = pt_to_tokens[pt] # tokens list now
+                    tokens = self.pt_to_tokens[pt] # tokens list now
                     new_tokens = []
                     new_pairs = set() # new borned pairs after merge
                     mx = len(tokens)
@@ -81,11 +82,11 @@ class Tokenizer:
                             pair_to_pt[new_pair] = set() # could born in other pts
                         pair_to_pt[new_pair].add(pt)
                     
-                    pt_to_tokens[pt] = new_tokens # update the tokens storage for this pt
+                    self.pt_to_tokens[pt] = new_tokens # update the tokens storage for this pt
 
                 del pair_to_pt[pair_merge] # drop that link since there is no more pair_merge
             
-            token_id_list.extend([self.vocab_rev[token] for pt in pt_list_input_order for token in pt_to_tokens[pt]])
+            token_id_list.extend([self.vocab_rev[token] for pt in pt_list_input_order for token in self.pt_to_tokens[pt]])
             if sep:
                 token_id_list.append(self.vocab_rev[sep.encode('utf-8')])
 
@@ -98,17 +99,61 @@ class Tokenizer:
         return b"".join([ self.vocab[i] for i in ids]).decode("utf-8", errors="replace") 
 
 if __name__ == "__main__":
+    import pickle
+    import time
+    import numpy as np
+
     current_file_path = Path(__file__).parent.resolve()
     data_path = Path.joinpath(current_file_path, "../data/").absolute()
     out_path = Path.joinpath(current_file_path, "../out/").absolute()
-    bpe_path = out_path / "bpe_dump"
-    vocab,merges = load_bpe(bpe_path)
+
+    # tinystory
+    bpe_path = out_path / "bpe_dump_tinystory"
+    vocab, merges = load_bpe(bpe_path)
     tokenizer = Tokenizer(vocab, merges, ["<|endoftext|>"])
-    test_string = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
-    token_id_list = tokenizer.encode(test_string)
-    print(token_id_list)
-    print(tokenizer.decode(token_id_list))
-    tokenized_string = [tokenizer.decode([x]) for x in token_id_list]
-    print(tokenized_string)
-    assert tokenized_string.count("<|endoftext|>") == 3
+
+    # train
+    with open(data_path / "TinyStoriesV2-GPT4-train.txt", "r") as f:
+        text = f.read()
+    t0 = time.perf_counter()
+    token_id_list = tokenizer.encode(text)
+    token_id_list = np.array(token_id_list, dtype="uint16")
+    print(f"TinyStories train encode: {time.perf_counter() - t0:.3f}s")
+    with open(out_path / "TinyStoriesV2-GPT4-train.tid", "wb") as f:
+        pickle.dump({"token_id_list": token_id_list}, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # valid
+    with open(data_path / "TinyStoriesV2-GPT4-valid.txt", "r") as f:
+        text = f.read()
+    t0 = time.perf_counter()
+    token_id_list = tokenizer.encode(text)
+    token_id_list = np.array(token_id_list, dtype="uint16")
+    print(f"TinyStories valid encode: {time.perf_counter() - t0:.3f}s")
+    with open(out_path / "TinyStoriesV2-GPT4-valid.tid", "wb") as f:
+        pickle.dump({"token_id_list": token_id_list}, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # owt
+    bpe_path = out_path / "bpe_dump_owt"
+    vocab, merges = load_bpe(bpe_path)
+    tokenizer = Tokenizer(vocab, merges, ["<|endoftext|>"])
+
+    # train
+    with open(data_path / "owt_train.txt", "r") as f:
+        text = f.read()
+    t0 = time.perf_counter()
+    token_id_list = tokenizer.encode(text)
+    token_id_list = np.array(token_id_list, dtype="uint16")
+    print(f"OWT train encode: {time.perf_counter() - t0:.3f}s")
+    with open(out_path / "owt_train.tid", "wb") as f:
+        pickle.dump({"token_id_list": token_id_list}, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # valid
+    with open(data_path / "owt_valid.txt", "r") as f:
+        text = f.read()
+    t0 = time.perf_counter()
+    token_id_list = tokenizer.encode(text)
+    token_id_list = np.array(token_id_list, dtype="uint16")
+    print(f"OWT valid encode: {time.perf_counter() - t0:.3f}s")
+    with open(out_path / "owt_valid.tid", "wb") as f:
+        pickle.dump({"token_id_list": token_id_list}, f, protocol=pickle.HIGHEST_PROTOCOL)
 
